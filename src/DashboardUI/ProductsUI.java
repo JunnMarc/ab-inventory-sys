@@ -9,27 +9,33 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.sql.*;
 import java.util.HashMap;
+
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
 /**
  *
  * @author Xandro
  */
 public class ProductsUI extends javax.swing.JPanel {
-
     private DefaultTableModel tableModel;
     private ProductDAO productDAO;
-    
     private Map<Integer, String> productMap;
+    private Map<Integer, String> categoryMap;
     
     public ProductsUI() {   
         initComponents();
-        productDAO = new ProductDAO(); // Initialize DAO
+        productDAO = new ProductDAO();
         tableModel = (DefaultTableModel) jTable1.getModel();
-        
         productMap = new HashMap<>();
-        
+        categoryMap = new HashMap<>();
         loadProductData();
         loadProductDropdown();
+        loadProductTypeDropdown();
     }
     
     private void loadProductData() {
@@ -38,17 +44,11 @@ public class ProductsUI extends javax.swing.JPanel {
             if (rs != null) {
                 ResultSetMetaData metaData = rs.getMetaData();
                 int columnCount = metaData.getColumnCount();
-
-                // Clear previous data
                 tableModel.setColumnCount(0);
                 tableModel.setRowCount(0);
-
-                // Set column names dynamically
                 for (int i = 1; i <= columnCount; i++) {
                     tableModel.addColumn(metaData.getColumnName(i));
                 }
-
-                // Add rows from ResultSet to table model
                 while (rs.next()) {
                     Object[] row = new Object[columnCount];
                     for (int i = 1; i <= columnCount; i++) {
@@ -59,8 +59,7 @@ public class ProductsUI extends javax.swing.JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Error loading products: " + e.getMessage(),
-                    "Database Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error loading products: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
         } finally {
             try {
                 if (rs != null) rs.close();
@@ -71,35 +70,62 @@ public class ProductsUI extends javax.swing.JPanel {
     }
     
     private void loadProductDropdown() {
-        cmbProductSelect.removeAllItems(); // Clear dropdown
-        productMap.clear(); // Clear map
-
+        cmbProductSelect.removeAllItems();
+        productMap.clear();
         ResultSet rs = productDAO.getProductResultSet();
         try {
             while (rs.next()) {
                 int id = rs.getInt("product_id");
                 String name = rs.getString("product_name");
                 productMap.put(id, name);
-                cmbProductSelect.addItem(id + " - " + name);
+                cmbProductSelect.addItem(name);
             }
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
     
+    private void loadProductTypeDropdown() {
+        cmbProductType.removeAllItems(); // Clear previous items
+        categoryMap.clear();
+
+        ResultSet rs = productDAO.getCategoryResultSet();
+
+        try {
+            while (rs.next()) {
+                int id = rs.getInt("category_id");
+                String name = rs.getString("category_name");
+                categoryMap.put(id, name);
+                cmbProductType.addItem(name);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private int getSelectedCategoryId() {
+        String selectedCategory = (String) cmbProductType.getSelectedItem();
+        for (Map.Entry<Integer, String> entry : categoryMap.entrySet()) {
+            if (entry.getValue().equals(selectedCategory)) {
+                return entry.getKey(); // Return category_id
+            }
+        }
+        return -1; // Default value if not found
+    }
+
+  
     private void addProduct() {
         String name = txtProductName.getText();
-        String type = (String) cmbProductType.getSelectedItem();
-
+        int type = getSelectedCategoryId();
         if (name.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Enter a product name", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
         if (productDAO.addProduct(name, type)) {
             JOptionPane.showMessageDialog(this, "Product added successfully");
             loadProductData();
             loadProductDropdown();
+            loadProductTypeDropdown();
             txtProductName.setText("");    
         } else {
             JOptionPane.showMessageDialog(this, "Error adding product", "Error", JOptionPane.ERROR_MESSAGE);
@@ -112,19 +138,18 @@ public class ProductsUI extends javax.swing.JPanel {
             JOptionPane.showMessageDialog(this, "Select a product to update", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
-        int id = Integer.parseInt(selected.split(" - ")[0]); // Extract ID from "ID - Name" string
+        int id = getKeyFromValue(productMap, selected);
         String name = txtProductName.getText();
-        if (name.isEmpty() || !name.matches(".*[a-zA-Z].*")) {
-            JOptionPane.showMessageDialog(this, "Enter a valid product name to update", "Error", JOptionPane.ERROR_MESSAGE);
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter a valid product name", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        String type = (String) cmbProductType.getSelectedItem();
-
+        int type = getSelectedCategoryId();
         if (productDAO.updateProduct(id, name, type)) {
             JOptionPane.showMessageDialog(this, "Product updated successfully");
             loadProductData();
             loadProductDropdown();
+            loadProductTypeDropdown();
         } else {
             JOptionPane.showMessageDialog(this, "Error updating product", "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -136,19 +161,27 @@ public class ProductsUI extends javax.swing.JPanel {
             JOptionPane.showMessageDialog(this, "Select a product to delete", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
         int id = (int) tableModel.getValueAt(row, 0);
-
         int confirm = JOptionPane.showConfirmDialog(this, "Are you sure?", "Delete", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             if (productDAO.deleteProduct(id)) {
                 JOptionPane.showMessageDialog(this, "Product deleted successfully");
                 loadProductData();
                 loadProductDropdown();
+                loadProductTypeDropdown();
             } else {
                 JOptionPane.showMessageDialog(this, "Error deleting product", "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
+    }
+    
+    private int getKeyFromValue(Map<Integer, String> map, String value) {
+        for (Map.Entry<Integer, String> entry : map.entrySet()) {
+            if (entry.getValue().equals(value)) {
+                return entry.getKey();
+            }
+        }
+        return -1;
     }
 
     /**
@@ -183,6 +216,7 @@ public class ProductsUI extends javax.swing.JPanel {
 
         jTabbedPane1.setBorder(javax.swing.BorderFactory.createEmptyBorder(1, 1, 1, 1));
         jTabbedPane1.setToolTipText("");
+        jTabbedPane1.setCursor(new java.awt.Cursor(java.awt.Cursor.DEFAULT_CURSOR));
 
         jPanel1.setBorder(javax.swing.BorderFactory.createEmptyBorder(1, 1, 1, 1));
         jPanel1.setName(""); // NOI18N
@@ -202,7 +236,7 @@ public class ProductsUI extends javax.swing.JPanel {
         jTable1.setUpdateSelectionOnSort(false);
         jScrollPane1.setViewportView(jTable1);
 
-        jLabel1.setFont(new java.awt.Font("Dialog", 1, 24)); // NOI18N
+        jLabel1.setFont(new java.awt.Font("Metropolis Semi Bold", 0, 24)); // NOI18N
         jLabel1.setText("List of Products");
 
         jButton1.setText("Add New");
@@ -223,20 +257,20 @@ public class ProductsUI extends javax.swing.JPanel {
         jPanel1.setLayout(jPanel1Layout);
         jPanel1Layout.setHorizontalGroup(
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel1Layout.createSequentialGroup()
-                .addContainerGap()
-                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 983, Short.MAX_VALUE)
-                    .addGroup(jPanel1Layout.createSequentialGroup()
-                        .addComponent(jLabel1)
-                        .addGap(0, 0, Short.MAX_VALUE)))
-                .addContainerGap())
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                 .addComponent(jButton1, javax.swing.GroupLayout.PREFERRED_SIZE, 119, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addComponent(btnDeleteProd, javax.swing.GroupLayout.PREFERRED_SIZE, 115, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(57, 57, 57))
+            .addGroup(jPanel1Layout.createSequentialGroup()
+                .addContainerGap()
+                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 1035, Short.MAX_VALUE)
+                    .addGroup(jPanel1Layout.createSequentialGroup()
+                        .addComponent(jLabel1)
+                        .addGap(0, 0, Short.MAX_VALUE)))
+                .addContainerGap())
         );
         jPanel1Layout.setVerticalGroup(
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -256,7 +290,7 @@ public class ProductsUI extends javax.swing.JPanel {
 
         jPanel2.setBorder(javax.swing.BorderFactory.createEmptyBorder(1, 1, 1, 1));
 
-        jLabel5.setFont(new java.awt.Font("Dialog", 1, 24)); // NOI18N
+        jLabel5.setFont(new java.awt.Font("Metropolis Medium", 1, 24)); // NOI18N
         jLabel5.setText("Add/edit a product");
 
         cmbProductType.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "HUMUKON", "TAM-ISON", "GAHI-ON" }));
@@ -304,10 +338,9 @@ public class ProductsUI extends javax.swing.JPanel {
                         .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                             .addComponent(cmbProductSelect, javax.swing.GroupLayout.PREFERRED_SIZE, 89, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(jLabel7))
-                        .addGap(49, 49, 49)
+                        .addGap(49, 175, Short.MAX_VALUE)
                         .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
                             .addGroup(jPanel2Layout.createSequentialGroup()
-                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                 .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                     .addComponent(txtProductName, javax.swing.GroupLayout.PREFERRED_SIZE, 205, javax.swing.GroupLayout.PREFERRED_SIZE)
                                     .addComponent(jLabel2))
@@ -316,7 +349,6 @@ public class ProductsUI extends javax.swing.JPanel {
                                     .addComponent(jLabel4)
                                     .addComponent(cmbProductType, javax.swing.GroupLayout.PREFERRED_SIZE, 195, javax.swing.GroupLayout.PREFERRED_SIZE)))
                             .addGroup(jPanel2Layout.createSequentialGroup()
-                                .addGap(0, 0, Short.MAX_VALUE)
                                 .addComponent(btnAddProd, javax.swing.GroupLayout.PREFERRED_SIZE, 107, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addGap(18, 18, 18)
                                 .addComponent(btnEditProd, javax.swing.GroupLayout.PREFERRED_SIZE, 96, javax.swing.GroupLayout.PREFERRED_SIZE)))
@@ -347,7 +379,7 @@ public class ProductsUI extends javax.swing.JPanel {
                 .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(btnAddProd, javax.swing.GroupLayout.PREFERRED_SIZE, 41, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnEditProd, javax.swing.GroupLayout.PREFERRED_SIZE, 39, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addContainerGap(264, Short.MAX_VALUE))
+                .addContainerGap(271, Short.MAX_VALUE))
         );
 
         jTabbedPane1.addTab("Add/Edit Products", jPanel2);
